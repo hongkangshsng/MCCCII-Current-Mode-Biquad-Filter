@@ -1,172 +1,41 @@
-# 主動式電流模式二階濾波器設計與實現
-### Current-Mode Biquad Filter using MCCCII
+# MCCCII 主動式電流模式二階濾波器
 
-> 輔仁大學電機工程相關專題作品集｜類比電路設計、電流模式濾波器、數學分析與實驗驗證
+Current-mode biquad filters using a single multi-output current-controlled conveyor.
 
-本專題以**單一多輸出電流控制傳輸器（Multi-output Current Controlled Conveyor, MCCCII）**搭配被動元件，研究電流模式二階濾波器的設計與實現。透過不同導納配置，可由相同的主動元件架構實現**低通（LPF）、高通（HPF）與帶通（BPF）**等濾波功能。
+洪鏮展｜輔仁大學電機工程學系工程作品集。由原始專題報告出發，重建 LPF、HPF、BPF 電路方程、修正可確認的公式錯誤，並以 Python 建立可重現的理想頻率響應與元件調參實驗。
 
-**核心技術：** `Analog Circuit` · `MCCCII` · `Current-Mode Circuit` · `LPF` · `HPF` · `BPF` · `Transfer Function` · `Sensitivity Analysis` · `MATLAB`
+**Evidence boundary / 證據界線：** 新增曲線是 Rx=0 理想模型的數值模擬；原報告圖表是歷史來源，尚無可供重新分析的原始實測資料。本專案不宣稱已完成硬體重新量測或電晶體層模擬。
 
----
+## 開始使用 / Quick start
 
-## 1. 專題背景與研究目的
-
-電流模式（Current-Mode）電路具有適合類比訊號處理的特性。本專題以 MCCCII 作為主要主動元件，探討如何利用單一 MCCCII 與 R、C 等被動元件建立二階濾波器，並從電路方程式、傳輸函數、中心頻率、品質因數、靈敏度以及實驗結果等面向進行分析。
-
-研究重點包括：
-
-- 使用單一 MCCCII 實現多種二階濾波功能
-- 分析 Low-Pass、High-Pass、Band-Pass Filter
-- 推導 Transfer Function H(s)
-- 分析中心頻率 ω0 與品質因數 Q
-- 探討 MCCCII 非理想特性與 Current Tracking Error
-- 進行主動／被動 Sensitivity Analysis
-- 比較理論分析與實驗／模擬結果
-
----
-
-## 2. MCCCII 工作原理
-
-理想 MCCCII 的基本關係可表示為：
-
-```text
-Vx = Vy + IxRx
-Iy = 0
-Iz+ = Ix
-Iz- = -Ix
+```bash
+python -m pip install -r requirements.txt
+python -m unittest discover -s tests -v
+python run_experiments.py
 ```
 
-透過 X、Y、Z+、Z− 等端點的電壓／電流關係，以及外部導納元件的不同配置，可形成不同的電流模式濾波器。
+執行目錄為 repository 根目錄。輸出包含 21 組頻率響應 CSV、9 張增益／相位 SVG 曲線、掃描表與環境版本。Run from the repository root; no external dataset is required.
 
----
+## 技術文件 / Technical documentation
 
-## 3. 二階濾波器電路架構
+- [電路拓撲、完整數學推導與原報告勘誤 / Derivation and audit](docs/derivation.md)
+- [參數配置、調參方法、全部曲線與驗證 / Experiments and validation](docs/experiments.md)
+- [掃描結果表 / Generated results](results/summary.md)
+- [中英文專題摘要 / Bilingual project summary](docs/project-summary.md)
+- [參考文獻 / References](references/references.md)
 
-本專題研究的單一 MCCCII 架構可透過不同的被動導納 Y1～Y4，合成不同的二階濾波器功能。主要研究三種：
+| Baseline | f0 (Hz) | Q |
+|---|---:|---:|
+| LPF | 159.154943 | 0.500000 |
+| HPF | 159.154943 | 0.500000 |
+| BPF | 91.888149 | 0.346410 |
 
-| 濾波器 | 英文 | 功能 |
-|---|---|---|
-| 低通濾波器 | Low-Pass Filter (LPF) | 保留低頻訊號並衰減高頻訊號 |
-| 高通濾波器 | High-Pass Filter (HPF) | 衰減低頻並保留高頻訊號 |
-| 帶通濾波器 | Band-Pass Filter (BPF) | 允許指定頻帶內的訊號通過 |
+![LPF Q tuning](results/LPF_q.svg)
 
----
+## 工程能力 / Engineering scope
 
-## 4. 低通濾波器（LPF）
+本次補強涵蓋節點分析、二階系統係數比較、自然頻率與 Q、R/C/電導調參、數值輸出及獨立求解器測試。程式 `src/filters.py` 提供三種模型；`run_experiments.py` 自動輸出曲線與資料；`tests/test_filters.py` 驗證節點解、解析式、穩定性與頻寬。CI 設定在 `.github/workflows/verify.yml`。
 
-其中一組低通濾波器導納配置為：
+This project reconstructs three admittance configurations from the author's report, derives transfer functions using KCL, corrects documented inconsistencies, and supplies reproducible parameter sweeps with independent nodal-solver checks. Seven local test methods passed. Finite Rx, frequency-dependent tracking, noise, physical implementation and measured-data comparison remain future work.
 
-```text
-Y1 = sC1
-Y2 = G2
-Y3 = sC3
-Y4 = G4
-```
-
-其傳輸函數可表示為：
-
-```text
-Io/Iin = G2G4 /
-         [s²C1C3 + s(C1G2 + C3G2) + G2G4]
-```
-
-中心頻率為：
-
-```text
-ω0 = √(G2G4 / C1C3)
-```
-
-藉由電容與電導參數，可進一步分析濾波器的中心頻率與品質因數。
-
----
-
-## 5. 高通與帶通濾波器（HPF / BPF）
-
-透過改變 MCCCII 周圍的被動元件與導納配置，同一類型架構亦可實現 High-Pass 與 Band-Pass 二階濾波器。本專題分別分析其傳輸函數、中心頻率、品質因數，以及 Gain / Phase Response。
-
-此設計概念的重點在於：**以較少的主動元件實現多種濾波功能，使電路架構更加簡化與彈性化。**
-
----
-
-## 6. 非理想模型與靈敏度分析
-
-考慮 MCCCII 非理想特性後，可引入追蹤係數 α、β：
-
-```text
-Vx = αVy + IxRx
-Iz+ = βIx
-```
-
-接著分析電路元件與主動元件非理想效應對下列參數的影響：
-
-- 中心頻率 ω0
-- 品質因數 Q
-- Passive Sensitivity
-- Active Sensitivity
-- Current Tracking Error
-
-專題分析顯示，所研究的濾波器具有較低的被動靈敏度；中心頻率與品質因數對 MCCCII 電流追蹤誤差亦具有一定穩健性。
-
----
-
-## 7. 實驗與模擬驗證
-
-專題針對不同濾波器進行 Gain Response 與 Phase Response 分析，包括：
-
-- LPF Gain / Phase Response
-- HPF Gain / Phase Response
-- BPF Gain / Phase Response
-
-透過理論結果與實驗／模擬數據進行交叉比較，結果僅呈現小幅差異，可用以驗證所提出電路架構與理論分析的可行性。
-
----
-
-## 8. 本專題展現的工程能力
-
-透過本專題完成並練習以下能力：
-
-- **類比電路分析（Analog Circuit Analysis）**
-- **主動式濾波器設計（Active Filter Design）**
-- **電流模式電路（Current-Mode Circuit）**
-- **二階系統與傳輸函數推導**
-- **中心頻率 ω0 / 品質因數 Q 分析**
-- **頻率響應、Gain、Phase Analysis**
-- **Sensitivity Analysis**
-- **MATLAB 訊號／頻率響應分析**
-- **工程論文閱讀與文獻整理**
-- **理論與實驗結果比較**
-
----
-
-## 9. 專題成果
-
-本專題研究顯示，使用**單一 MCCCII** 即可建立電流模式二階低通、高通與帶通濾波器。透過數學推導、靈敏度分析與實驗結果驗證，進一步確認此類架構在類比訊號處理與主動式濾波器設計上的可行性。
-
----
-
-## 10. Repository Structure
-
-```text
-MCCCII-Current-Mode-Biquad-Filter/
-├── README.md                 # 中文作品集首頁
-├── docs/
-│   └── project-summary.md    # 專題摘要
-└── references/
-    └── references.md        # 主要參考文獻
-```
-
----
-
-## 11. 參考文獻
-
-本專題參考 Current Conveyor、Current-Mode Filter、CFCCII 與 MCCCII 等相關研究。完整整理請參閱：
-
-➡️ [References](references/references.md)
-
----
-
-## 作者 / Author
-
-**洪鏮展**  
-輔仁大學 電機工程學系  
-Electrical Engineering, Fu Jen Catholic University
+All new plots and tables represent ideal transfer-function calculations, not new physical measurements. The natural frequency f0 is distinct from the LPF/HPF −3 dB cutoff. See the audit for topology-label ambiguities and the corrected BPF damping coefficient.

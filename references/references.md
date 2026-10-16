@@ -16,3 +16,8 @@ Selected references from the original project report:
 12. Y. C. Yin and H. Y. Liu, “Voltage-Mode Biquad Using Single Multi-output Current Controlled Conveyor,” Consumer Electronics Forum, 2013.
 
 > Full bibliographic details are retained in the original project report.
+## Primary project source / 本次核對來源
+
+洪鏮展，《B組 個人 中文書面報告 410242262洪鏮展(1).pdf》，16 頁，作者提供。PDF p2–4：電路及公式；p8–10：非理想與靈敏度；p11–12：原始響應圖及元件值。SHA256: `0137f2bcf18123d7c51235491b6ecbf6b403564f1ffecd9cad65fd9a0f88acec`。
+
+上述文獻清單承自原報告，未在此次逐篇全文驗證。此次模型直接依作者報告及節點方程重建，不將參考文獻清單視為已確認的硬體證據。See [audit](../docs/derivation.md) for corrections and assumptions.

@@ -1,25 +1,7 @@
-# Project Summary
+# 專題摘要 / Project summary
 
-## 中文摘要
+以單一 MCCCII 的導納網路為基礎，研究電流模式二階低通、高通及帶通濾波器。由原始報告電路圖重建節點方程，釐清導納標籤與帶通公式的不一致，推導 H(s)、自然頻率及品質因數。以 Python 產生 21 組理想頻率響應、9 張增益／相位圖及元件掃描表，並以獨立節點求解、SciPy 及解析性質驗證程式。本次七項本機測試通過；新增結果屬理論模型數值模擬，無新增硬體量測。原報告中的實驗圖未作為本次程式輸出或量化誤差證據。
 
-本專題研究以單一多輸出電流控制傳輸器（MCCCII）搭配被動元件，實現電流模式二階濾波器。透過不同導納配置，可由同一主動元件架構實現低通（LPF）、高通（HPF）與帶通（BPF）濾波功能。
+Reconstructed single-MCCCII LPF, HPF and BPF admittance networks from the author's report; derived transfer functions and audited formula and labeling errors. Implemented 21 reproducible ideal-model cases with gain/phase plots and component sweep tables. Validated the implementation using independent nodal solutions, SciPy frequency responses, pole stability and analytical bandwidth checks. Seven local test methods passed. New outputs are ideal-model numerical simulations; no new physical measurements are claimed.
 
-研究內容涵蓋：
-
-- MCCCII 電路模型與基本關係式
-- 各類二階濾波器架構
-- 傳輸函數推導
-- 中心頻率 ω0 與品質因數 Q
-- 非理想 MCCCII 模型
-- 主動／被動靈敏度分析
-- 增益與相位響應驗證
-
-專題結果顯示，所提出之電流模式濾波器架構具備電路簡化、功能彈性與低被動靈敏度等優點，理論分析與實驗／模擬結果亦具有良好一致性。
-
-## Resume-ready Highlights
-
-- Designed and analyzed current-mode second-order LPF / HPF / BPF structures using MCCCII.
-- Derived transfer functions, center frequency, and quality factor.
-- Evaluated non-ideal current tracking and parameter sensitivity.
-- Compared theoretical analysis with gain / phase response results.
-- Applied analog-circuit and MATLAB-based analysis methods.
+[推導 / Derivation](derivation.md) · [實驗 / Experiments](experiments.md)
