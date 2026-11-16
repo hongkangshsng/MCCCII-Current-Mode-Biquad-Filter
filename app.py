@@ -100,17 +100,41 @@ VERSION_HISTORY = [
         "version": "v2.1.0",
         "date": "2026-11-16",
         "stage": "線上會議互動實驗與時域/迴歸驗證台",
-        "added": "新增 app.py (互動波德圖、時域階躍響應與過衝模擬、Monte Carlo 公差分析、即時 7 項功能測試面板)、.streamlit/config.toml 深色主題與 CHANGELOG.md。",
+        "added": "新增 app.py (互動波德圖、時域階躍響應、Monte Carlo 公差、即時 7 項功能測試與 Fault-Injection 模擬)、.streamlit/config.toml 與 CHANGELOG.md。",
         "deleted": "無破壞性刪除；完整保留 src/filters.py 與 tests/test_filters.py 既有介面。",
         "verification": "即時執行 7 項功能測試與雙求解器交叉比對，確保互動介面與核心演算法零偏差。",
-        "rollback_note": "若互動層發生相依套件異常，可直接退回 v2.0.0 核心 CLI 執行環境。",
+        "rollback_note": "若互動層發生異常，可直接退回 v2.0.0 核心 CLI 執行環境。",
     },
 ]
 
+FAULT_OPTIONS = [
+    "無故障 (黃金基準版本 / Nominal)",
+    "Bug 1: BPF 阻尼漏掉 C₂G₃ 項 (還原舊報告 Eq.8 錯誤)",
+    "Bug 2: 極點阻尼符號反轉 (系統進入右半平面不穩定)",
+    "Bug 3: 非法負電導未攔截 (輸入防護失效)",
+]
 
-def run_functional_checks() -> list[dict[str, str]]:
+
+def run_functional_checks(fault_mode: str = FAULT_OPTIONS[0]) -> list[dict[str, str]]:
+    """Run core verification assertions with optional fault injection."""
     results = []
     f_grid = np.logspace(-2, 6, 71)
+    s_grid = 1j * 2 * np.pi * f_grid
+
+    def eval_response(kind: str, p: dict[str, float], f_arr: np.ndarray) -> np.ndarray:
+        n, d = coefficients(kind, p)
+        d = d.copy()
+        if fault_mode == FAULT_OPTIONS[1] and kind == "BPF":
+            # Simulate missing C2*G3 term in BPF denominator (Eq.8 historical bug)
+            k = p["C1"] * p["C2"] + p["C1"] * p["C3"] + p["C2"] * p["C3"]
+            d[1] -= (p["C2"] * p["G3"]) / k
+        elif fault_mode == FAULT_OPTIONS[2]:
+            # Simulate sign-flip bug pushing poles into right-half plane
+            d[1] = -abs(d[1])
+        s_arr = 1j * 2 * np.pi * f_arr
+        return np.polyval(n, s_arr) / np.polyval(d, s_arr)
+
+    # 1. Baseline w0 and Q
     expected_base = {
         "LPF": (1000.0, 0.5),
         "HPF": (1000.0, 0.5),
@@ -122,50 +146,64 @@ def run_functional_checks() -> list[dict[str, str]]:
     )
     results.append({"test": "1. test_baseline (基準 ω₀ 與 Q 驗證)", "status": "PASS" if base_err < 1e-10 else "FAIL", "metric": f"最大誤差 = {base_err:.2e}"})
 
+    # 2. Independent 3x3 KCL nodal solver cross-check
     rng = np.random.default_rng(42)
     nodal_err = 0.0
     for kind, base_p in BASE.items():
         for _ in range(8):
             scales = 10 ** rng.uniform(-1, 1, size=len(base_p))
             p = {k: v * float(s) for (k, v), s in zip(base_p.items(), scales)}
-            nodal_err = max(nodal_err, float(np.max(np.abs(response(kind, p, f_grid) - nodal_response(kind, p, f_grid)))))
+            nodal_err = max(nodal_err, float(np.max(np.abs(eval_response(kind, p, f_grid) - nodal_response(kind, p, f_grid)))))
     results.append({"test": "2. test_independent_nodal_solver (3×3 KCL 矩陣交叉驗證)", "status": "PASS" if nodal_err < 2e-9 else "FAIL", "metric": f"24 組隨機參數最大誤差 = {nodal_err:.2e}"})
 
+    # 3. SciPy freqs cross-check
     scipy_err = 0.0
     for kind, p in BASE.items():
         n, d = coefficients(kind, p)
         _, hs = signal.freqs(n, d, 2 * np.pi * f_grid)
-        scipy_err = max(scipy_err, float(np.max(np.abs(response(kind, p, f_grid) - hs))))
+        scipy_err = max(scipy_err, float(np.max(np.abs(eval_response(kind, p, f_grid) - hs))))
     results.append({"test": "3. test_scipy (SciPy freqs 數值一致性)", "status": "PASS" if scipy_err < 1e-12 else "FAIL", "metric": f"最大誤差 = {scipy_err:.2e}"})
 
-    dc_lpf = abs(response("LPF", BASE["LPF"], np.array([1e-8]))[0])
-    hf_hpf = abs(response("HPF", BASE["HPF"], np.array([1e10]))[0])
-    phases = {k: float(np.angle(response(k, BASE[k], np.array([metrics(k, BASE[k])[1]]))[0], deg=True)) for k in BASE}
+    # 4. Limits and phase at f0
+    dc_lpf = abs(eval_response("LPF", BASE["LPF"], np.array([1e-8]))[0])
+    hf_hpf = abs(eval_response("HPF", BASE["HPF"], np.array([1e10]))[0])
+    phases = {k: float(np.angle(eval_response(k, BASE[k], np.array([metrics(k, BASE[k])[1]]))[0], deg=True)) for k in BASE}
     phase_err = max(abs(phases["LPF"] + 90.0), abs(phases["HPF"] - 90.0), abs(phases["BPF"]))
     lim_ok = abs(dc_lpf - 1.0) < 1e-9 and abs(hf_hpf - 1.0) < 1e-9 and phase_err < 1e-9
     results.append({"test": "4. test_limits_and_phase (極限增益與 f₀ 相位驗證)", "status": "PASS" if lim_ok else "FAIL", "metric": f"LPF={phases['LPF']:.1f}°, HPF={phases['HPF']:.1f}°, BPF={phases['BPF']:.1f}°"})
 
+    # 5. Stability (Re(poles) < 0)
     max_real_pole = -np.inf
     for kind in BASE:
         for mode in ("q", "frequency"):
             for v in (0.25, 0.5, 1.0, 2.0, 4.0):
                 _, d = coefficients(kind, sweep(kind, mode, v))
+                d = d.copy()
+                if fault_mode == FAULT_OPTIONS[2]:
+                    d[1] = -abs(d[1])
                 max_real_pole = max(max_real_pole, float(np.max(np.real(np.roots(d)))))
     results.append({"test": "5. test_stability_and_tuning (極點穩定性 Re(s)<0)", "status": "PASS" if max_real_pole < 0 else "FAIL", "metric": f"最大極點實部 = {max_real_pole:.2f} rad/s"})
 
+    # 6. BPF -3 dB bandwidth
     w0_bpf, _, q_bpf = metrics("BPF", BASE["BPF"])
     lo_w = w0_bpf * (np.sqrt(1 + 1 / (4 * q_bpf**2)) - 1 / (2 * q_bpf))
     hi_w = w0_bpf * (np.sqrt(1 + 1 / (4 * q_bpf**2)) + 1 / (2 * q_bpf))
-    q_calc = w0_bpf / (hi_w - lo_w)
-    results.append({"test": "6. test_bpf_bandwidth (BPF -3 dB 頻寬驗證)", "status": "PASS" if abs(q_calc - q_bpf) < 1e-12 else "FAIL", "metric": f"ω₀/Δω = {q_calc:.6f} (理論 Q = {q_bpf:.6f})"})
+    f_bw = np.array([lo_w, hi_w]) / (2 * np.pi)
+    bw_mag = np.abs(eval_response("BPF", BASE["BPF"], f_bw))
+    bw_err = float(np.max(np.abs(bw_mag - 0.2 / np.sqrt(2))))
+    results.append({"test": "6. test_bpf_bandwidth (BPF -3 dB 頻寬驗證)", "status": "PASS" if bw_err < 1e-12 else "FAIL", "metric": f"-3 dB 邊界誤差 = {bw_err:.2e}"})
 
+    # 7. Invalid input guard
     guard_ok = True
-    try:
-        coefficients("LPF", {**BASE["LPF"], "G2": -1.0})
+    if fault_mode == FAULT_OPTIONS[3]:
         guard_ok = False
-    except ValueError:
-        pass
-    results.append({"test": "7. test_db_and_invalid (負值/非法參數防護)", "status": "PASS" if guard_ok else "FAIL", "metric": "負電導成功觸發 ValueError"})
+    else:
+        try:
+            coefficients("LPF", {**BASE["LPF"], "G2": -1.0})
+            guard_ok = False
+        except ValueError:
+            pass
+    results.append({"test": "7. test_db_and_invalid (負值/非法參數防護)", "status": "PASS" if guard_ok else "FAIL", "metric": "負電導成功觸發 ValueError" if guard_ok else "負電導未被攔截 (Guard Bypassed)"})
     return results
 
 
@@ -220,7 +258,6 @@ with tab_lab:
     is_stable = bool(np.all(np.real(poles) < 0))
     f0_gain_db = float(20 * np.log10(np.maximum(abs(response(kind, params, np.array([f0]))[0]), 1e-12)))
 
-    # 2x2 KPI grid so metrics never truncate even with sidebar open
     r1c1, r1c2 = st.columns(2)
     r1c1.metric("中心頻率 f₀", f"{f0:.2f} Hz", f"ω₀ = {w0:.1f} rad/s")
     r1c2.metric("品質因數 Q", f"{q_val:.4f}")
@@ -242,7 +279,6 @@ with tab_lab:
     fig.update_layout(height=500, template="plotly_dark", paper_bgcolor="#0b1120", plot_bgcolor="#0f172a", margin=dict(l=20, r=20, t=40, b=20))
     st.plotly_chart(fig, use_container_width=True)
 
-    # Time-Domain Step Response
     st.divider()
     st.subheader("時域階躍響應 (Time-Domain Step Response)")
     t_end = min(max(14.0 * q_val / w0, 10.0 / w0), 1.5)
@@ -322,14 +358,28 @@ with tab_verify:
         st.caption(f"在 ±{tol_pct}% 元件公差下（{n_trials} 次模擬）：f₀ 分佈於 **{min(f0_samples):.2f} ~ {max(f0_samples):.2f} Hz**，Q 分佈於 **{min(q_samples):.4f} ~ {max(q_samples):.4f}**。")
 
 with tab_versions:
-    st.subheader("即時功能驗證測試 (Live Functional Test Suite)")
-    if st.button("▶ 立即執行 7 項功能驗證", type="primary"):
-        checks = run_functional_checks()
-        st.dataframe(checks, use_container_width=True, hide_index=True)
-        if all(c["status"] == "PASS" for c in checks):
-            st.success("全部 7 項功能驗證皆通過 (7/7 PASS) — 目前版本可安全作為二次開發基準。")
+    st.subheader("即時功能驗證與錯誤注入模擬 (Functional Test & Fault-Injection)")
+    fault_mode = st.selectbox(
+        "選擇測試情境 / 注入故障模式 (Fault-Injection Simulator)",
+        options=FAULT_OPTIONS,
+        help="切換為 Bug 模式可現場示範當改版引入 Functional Error 時，單元測試如何即時攔截異常並定位回溯點。",
+    )
+    checks = run_functional_checks(fault_mode)
+    display_checks = [
+        {"測項": c["test"], "結果": "✅ PASS" if c["status"] == "PASS" else "❌ FAIL", "量測指標": c["metric"]}
+        for c in checks
+    ]
+    st.dataframe(display_checks, use_container_width=True, hide_index=True)
+
+    pass_count = sum(1 for c in checks if c["status"] == "PASS")
+    if pass_count == len(checks):
+        st.success(f"全部 {len(checks)} 項功能驗證皆通過 ({pass_count}/{len(checks)} PASS) — 目前版本可安全作為二次開發基準。")
     else:
-        st.dataframe(run_functional_checks(), use_container_width=True, hide_index=True)
+        st.error(
+            f"偵測到 Functional Error！（僅 {pass_count}/{len(checks)} 通過）"
+            " 建議立即執行 `git checkout v2.0.0` 回溯至上一個黃金驗證基準，並比對 `CHANGELOG.md` 鎖定異常變更。"
+        )
+
     st.divider()
     st.subheader("版本演進與 Additions / Deletions 追蹤 (Release Checkpoints)")
     st.dataframe(VERSION_HISTORY, use_container_width=True, hide_index=True)
