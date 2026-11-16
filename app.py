@@ -1,0 +1,1 @@
+Add interactive Streamlit dashboard (app.py) directly wrapping src/filters.py for live Bode plotting, orthogonal (f0, Q) & component (G, C) sweeps, dual-solver error checks, Monte Carlo tolerance simulation, and on-demand functional test execution.
