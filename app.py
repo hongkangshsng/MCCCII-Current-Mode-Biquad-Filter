@@ -62,17 +62,17 @@ st.markdown(
 FILTER_INFO = {
     "LPF": {
         "name": "低通濾波器 (LPF)",
-        "desc": "保留低頻訊號、抑制高頻雜訊；在 f₀ 處相位為 -90°，高頻滾降斜率 -40 dB/dec。",
+        "desc": "保留低頻訊號、抑制高頻雜訊；在 f₀ 處相位為 -90°，高頻滾降斜率 -40 dB/dec。拉高 Q (> 0.707) 時時域會出現明顯過衝與振盪。",
         "admittance": "Y₁ = sC₁, Y₂ = G₂, Y₃ = sC₃, Y₄ = G₄",
     },
     "BPF": {
         "name": "帶通濾波器 (BPF)",
-        "desc": "僅允許中心頻率 f₀ 附近訊號通過；f₀ 處相位為 0°，理想峰值增益為 0.2 (-13.98 dB)。",
+        "desc": "僅允許中心頻率 f₀ 附近訊號通過；f₀ 處相位為 0°，理想峰值增益為 0.2 (-13.98 dB)。Q 越高，時域響鈴 (Ringing) 持續越久。",
         "admittance": "Y₁ = sC₁ + G₁, Y₂ = sC₂, Y₃ = sC₃ + G₃, Y₄ = G₄",
     },
     "HPF": {
         "name": "高通濾波器 (HPF)",
-        "desc": "抑制低頻直流與漂移、保留高頻訊號；在 f₀ 處相位為 +90°，低頻斜率 +40 dB/dec。",
+        "desc": "抑制低頻直流與漂移、保留高頻訊號；在 f₀ 處相位為 +90°，低頻斜率 +40 dB/dec。階躍輸入瞬間直通 (y=1)，隨後依阻尼比收斂至 0。",
         "admittance": "Y₁ = G₁, Y₂ = sC₂, Y₃ = G₃, Y₄ = sC₄",
     },
 }
@@ -99,8 +99,8 @@ VERSION_HISTORY = [
     {
         "version": "v2.1.0",
         "date": "2026-11-16",
-        "stage": "線上會議互動實驗與迴歸測試儀表板",
-        "added": "新增 app.py (Streamlit 互動頻率響應台、Monte Carlo 元件公差模擬、即時 7 項功能測試面板)、.streamlit/config.toml 深色主題與 CHANGELOG.md。",
+        "stage": "線上會議互動實驗與時域/迴歸驗證台",
+        "added": "新增 app.py (互動波德圖、時域階躍響應與過衝模擬、Monte Carlo 公差分析、即時 7 項功能測試面板)、.streamlit/config.toml 深色主題與 CHANGELOG.md。",
         "deleted": "無破壞性刪除；完整保留 src/filters.py 與 tests/test_filters.py 既有介面。",
         "verification": "即時執行 7 項功能測試與雙求解器交叉比對，確保互動介面與核心演算法零偏差。",
         "rollback_note": "若互動層發生相依套件異常，可直接退回 v2.0.0 核心 CLI 執行環境。",
@@ -204,7 +204,7 @@ with col_title:
 with col_badge:
     st.markdown('<div style="text-align:right; padding-top:1rem;"><span class="tag-badge">v2.1.0 · Verified Core</span></div>', unsafe_allow_html=True)
 
-tab_lab, tab_verify, tab_versions = st.tabs(["📊 1. 互動頻率響應實驗台", "🔬 2. 雙求解器交叉驗證 & 公差分析", "🏷️ 3. 版本歷程與韌體級功能測試"])
+tab_lab, tab_verify, tab_versions = st.tabs(["📊 1. 互動頻率與時域響應台", "🔬 2. 雙求解器交叉驗證 & 公差分析", "🏷️ 3. 版本歷程與韌體級功能測試"])
 
 with tab_lab:
     f_min, f_max = freq_range
@@ -239,8 +239,42 @@ with tab_lab:
     fig.update_xaxes(type="log", title_text="頻率 Frequency (Hz)", row=2, col=1)
     fig.update_yaxes(title_text="Magnitude (dB)", row=1, col=1)
     fig.update_yaxes(title_text="Phase (deg)", row=2, col=1)
-    fig.update_layout(height=540, template="plotly_dark", paper_bgcolor="#0b1120", plot_bgcolor="#0f172a", margin=dict(l=20, r=20, t=40, b=20))
+    fig.update_layout(height=500, template="plotly_dark", paper_bgcolor="#0b1120", plot_bgcolor="#0f172a", margin=dict(l=20, r=20, t=40, b=20))
     st.plotly_chart(fig, use_container_width=True)
+
+    # Time-Domain Step Response
+    st.divider()
+    st.subheader("時域階躍響應 (Time-Domain Step Response)")
+    t_end = min(max(14.0 * q_val / w0, 10.0 / w0), 1.5)
+    t_grid = np.linspace(0.0, t_end, 600)
+    _, y_step = signal.step((n_coef, d_coef), T=t_grid)
+    y_ss = 1.0 if kind == "LPF" else 0.0
+    peak_val = float(np.max(y_step))
+    overshoot_pct = max(0.0, (peak_val - 1.0) * 100.0) if kind == "LPF" else None
+    tol_band = 0.02 * max(1.0, float(np.max(np.abs(y_step))))
+    unsettled = np.where(np.abs(y_step - y_ss) > tol_band)[0]
+    settling_ms = float(t_grid[unsettled[-1]] * 1e3) if len(unsettled) > 0 else 0.0
+
+    ts_c1, ts_c2, ts_c3 = st.columns(3)
+    ts_c1.metric("阻尼狀態 (Damping)", "欠阻尼 (振盪)" if q_val > 0.5 else ("臨界阻尼" if abs(q_val - 0.5) < 1e-3 else "過阻尼"))
+    if overshoot_pct is not None:
+        ts_c2.metric("過衝量 Overshoot", f"{overshoot_pct:.1f} %", f"峰值 = {peak_val:.3f}")
+    else:
+        ts_c2.metric("時域峰值 (Peak)", f"{peak_val:.3f}", f"穩態 = {y_ss:.1f}")
+    ts_c3.metric("2% 安定時間 (Settling)", f"{settling_ms:.2f} ms")
+
+    fig_step = go.Figure()
+    if show_baseline:
+        n_base, d_base = coefficients(kind, BASE[kind])
+        _, y_base = signal.step((n_base, d_base), T=t_grid)
+        fig_step.add_trace(go.Scatter(x=t_grid * 1e3, y=y_base, name="基準 Step Response", line=dict(color="rgba(148, 163, 184, 0.7)", width=2, dash="dash")))
+    fig_step.add_trace(go.Scatter(x=t_grid * 1e3, y=y_step, name="目前 Step Response", line=dict(color="#f59e0b", width=3)))
+    fig_step.add_hline(y=y_ss, line_dash="dot", line_color="rgba(45, 212, 191, 0.6)", annotation_text=f"穩態值 = {y_ss:.1f}")
+    fig_step.update_xaxes(title_text="時間 Time (ms)")
+    fig_step.update_yaxes(title_text="輸出電流歸一化響應 I_o(t)")
+    fig_step.update_layout(height=340, template="plotly_dark", paper_bgcolor="#0b1120", plot_bgcolor="#0f172a", margin=dict(l=20, r=20, t=20, b=20))
+    st.plotly_chart(fig_step, use_container_width=True)
+
     st.info(f"💡 **物理意義提示**：{FILTER_INFO[kind]['desc']}")
 
     with st.expander("查看即時轉移函數係數與元件參數表"):
